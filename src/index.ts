@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
     <head>
       <title>X Scraper TS</title>
       <style>
-        body { font-family: system-ui; max-width: 800px; margin: 50px auto; padding: 20px; }
+        body { font-family: system-ui; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f8fa; }
         h1 { color: #1DA1F2; }
         .stat { background: #f7f9fa; padding: 20px; border-radius: 8px; margin: 10px 0; }
         .endpoint { background: #fff; padding: 10px; border: 1px solid #e1e8ed; border-radius: 4px; margin: 5px 0; }
@@ -46,11 +46,56 @@ app.get('/', (req, res) => {
         .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
         .get { background: #61affe; color: white; }
         .post { background: #49cc90; color: white; }
+        
+        /* Scrape Button Styles */
+        .scrape-section { background: white; padding: 25px; border-radius: 12px; margin: 20px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .scrape-form { display: flex; gap: 10px; margin-bottom: 15px; }
+        .scrape-input { flex: 1; padding: 12px 15px; border: 2px solid #e1e8ed; border-radius: 8px; font-size: 16px; }
+        .scrape-input:focus { outline: none; border-color: #1DA1F2; }
+        .scrape-btn { padding: 12px 30px; background: #1DA1F2; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s; }
+        .scrape-btn:hover { background: #0c85d0; transform: translateY(-1px); }
+        .scrape-btn:active { transform: translateY(0); }
+        .scrape-btn:disabled { background: #ccc; cursor: not-allowed; }
+        
+        /* Results Area */
+        .results-area { margin-top: 20px; display: none; }
+        .results-area.show { display: block; }
+        .result-item { background: #fff; border: 1px solid #e1e8ed; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .result-item h4 { margin: 0 0 8px 0; color: #1DA1F2; }
+        .result-item p { margin: 4px 0; font-size: 14px; color: #536471; }
+        .result-item .meta { font-size: 12px; color: #8b98a5; }
+        
+        /* Status Messages */
+        .status-msg { padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; display: none; }
+        .status-msg.show { display: block; }
+        .status-msg.loading { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+        .status-msg.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-msg.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #f3f3f3; border-top: 2px solid #1DA1F2; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       </style>
     </head>
     <body>
       <h1>🐦 X Scraper TS v1.0</h1>
       <p>TypeScript + Puppeteer-core + AdsPower</p>
+
+      <div class="scrape-section">
+        <h2>🚀 Scrape Now</h2>
+        <p style="color: #536471; margin-bottom: 15px;">Enter a Twitter username to scrape their latest tweets (max 50)</p>
+        
+        <div class="scrape-form">
+          <input type="text" id="username" class="scrape-input" placeholder="@username" />
+          <button id="scrapeBtn" class="scrape-btn" onclick="scrapeUser()">Scrape Now</button>
+        </div>
+        
+        <div id="statusMsg" class="status-msg"></div>
+        
+        <div id="resultsArea" class="results-area">
+          <h3>Results</h3>
+          <div id="resultsList"></div>
+        </div>
+      </div>
 
       <div class="stat">
         <h2>📊 Statistics</h2>
@@ -110,6 +155,7 @@ app.get('/', (req, res) => {
       </div>
 
       <script>
+        // Load stats on page load
         fetch('/api/stats')
           .then(r => r.json())
           .then(data => {
@@ -117,6 +163,89 @@ app.get('/', (req, res) => {
             document.getElementById('tweets').textContent = data.stats.tweets;
             document.getElementById('recent').textContent = data.stats.recent;
           });
+
+        // Scrape user function
+        async function scrapeUser() {
+          const usernameInput = document.getElementById('username');
+          const scrapeBtn = document.getElementById('scrapeBtn');
+          const statusMsg = document.getElementById('statusMsg');
+          const resultsArea = document.getElementById('resultsArea');
+          const resultsList = document.getElementById('resultsList');
+          
+          let username = usernameInput.value.trim();
+          
+          if (!username) {
+            showStatus('Please enter a username', 'error');
+            return;
+          }
+          
+          // Remove @ if present
+          username = username.replace('@', '');
+          
+          // Show loading state
+          scrapeBtn.disabled = true;
+          scrapeBtn.textContent = 'Scraping...';
+          showStatus('<span class="spinner"></span> Scraping @' + username + ' tweets... This may take up to 60 seconds.', 'loading');
+          resultsArea.classList.remove('show');
+          
+          try {
+            const response = await fetch('/api/scrape/profile/' + username, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ count: 20 })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              showStatus('✅ Successfully scraped ' + data.scraped + ' tweets! Saved ' + data.saved + ' to database.', 'success');
+              
+              // Show results
+              if (data.tweets && data.tweets.length > 0) {
+                resultsList.innerHTML = data.tweets.map(tweet => \`
+                  <div class="result-item">
+                    <h4>\${tweet.author}</h4>
+                    <p>\${tweet.text}</p>
+                    <div class="meta">
+                      💬 \${tweet.replies || 0} | 🔄 \${tweet.retweets || 0} | ❤️ \${tweet.likes || 0} | 
+                      📅 \${new Date(tweet.timestamp || Date.now()).toLocaleString()}
+                    </div>
+                  </div>
+                \`).join('');
+                resultsArea.classList.add('show');
+              }
+              
+              // Refresh stats
+              fetch('/api/stats')
+                .then(r => r.json())
+                .then(statsData => {
+                  document.getElementById('accounts').textContent = statsData.stats.accounts;
+                  document.getElementById('tweets').textContent = statsData.stats.tweets;
+                  document.getElementById('recent').textContent = statsData.stats.recent;
+                });
+            } else {
+              showStatus('❌ ' + (data.error || 'Failed to scrape tweets. Make sure AdsPower is configured.'), 'error');
+            }
+          } catch (error) {
+            showStatus('❌ Network error: ' + error.message, 'error');
+          } finally {
+            scrapeBtn.disabled = false;
+            scrapeBtn.textContent = 'Scrape Now';
+          }
+        }
+        
+        function showStatus(message, type) {
+          const statusMsg = document.getElementById('statusMsg');
+          statusMsg.innerHTML = message;
+          statusMsg.className = 'status-msg show ' + type;
+        }
+        
+        // Allow Enter key to trigger scrape
+        document.getElementById('username').addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            scrapeUser();
+          }
+        });
       </script>
     </body>
     </html>
@@ -380,6 +509,63 @@ app.post('/api/accounts/batch-scrape', async (req, res) => {
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Cron endpoint for scheduled scraping
+app.post('/api/scrape/publisherinabox', async (req, res) => {
+  try {
+    const username = 'publisherinabox';
+    const count = 50;
+
+    console.log(`[CRON] ${new Date().toISOString()} - Starting scheduled scrape for @${username}`);
+
+    const tweets = await scraper.scrapeProfile(username, count);
+
+    if (!tweets || tweets.length === 0) {
+      console.log(`[CRON] ${new Date().toISOString()} - No tweets scraped for @${username}`);
+      return res.json({
+        success: false,
+        username,
+        scraped: 0,
+        message: 'No tweets scraped',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Save to database
+    let saved = 0;
+    let account: any;
+
+    const accounts = db.getAccounts();
+    account = accounts.find(a => a.username === username);
+
+    if (!account) {
+      account = db.addAccount(username);
+    }
+
+    for (const tweet of tweets) {
+      if (db.saveTweet(tweet, account.id)) {
+        saved++;
+      }
+    }
+
+    console.log(`[CRON] ${new Date().toISOString()} - Successfully scraped ${tweets.length} tweets, saved ${saved}`);
+
+    res.json({
+      success: true,
+      username,
+      scraped: tweets.length,
+      saved,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error(`[CRON] Error scraping publisherinabox:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // ==================== START SERVER ====================
