@@ -5,11 +5,17 @@ WORKDIR /app
 # Install dependencies for native modules
 RUN apk add --no-cache python3 make g++
 
+# Install all dependencies (including devDependencies for build)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 COPY . .
+
+# Build TypeScript
 RUN npm run build
+
+# Remove devDependencies to reduce image size
+RUN npm prune --production
 
 # Expose port (Railway sets PORT dynamically)
 EXPOSE 5003
